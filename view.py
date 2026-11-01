@@ -2,7 +2,10 @@
 
 运行（macOS 上被动查看器必须用 mjpython 启动）：
   /Users/mac/Development/rl-pendulum/.venv/bin/mjpython /Users/mac/Development/rl-pendulum/view.py
-  ... view.py --ctrl pd        用控制器自动推（第 2 课会加更多控制器）
+  ... view.py --ctrl pd        用控制器自动推
+  ... view.py --ctrl tune      调参模式：Control 面板里有 4 个增益滑块（K_x、K_x_dot、K_theta、K_theta_dot），
+                               F = K_x·x + K_x_dot·ẋ + K_theta·θ + K_theta_dot·θ̇，边拖边看效果；Backspace 让杆从 5° 重来
+  ... view.py --ctrl tune --gains 0,0,20,0     指定初始增益
 
 操作：
   右侧 Control 面板拖 push 滑块 = 你自己推小车（没选控制器时）
@@ -27,11 +30,22 @@ CONTROLLERS = {
 }
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS))
+ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune"])
+ap.add_argument("--gains", default="0,0,0,0", help="--ctrl tune 的初始增益：K_x,K_x_dot,K_theta,K_theta_dot")
 args = ap.parse_args()
-controller = CONTROLLERS[args.ctrl]
 
-model = mujoco.MjModel.from_xml_path(XML)
+if args.ctrl == "tune":
+    # 调参模式：在 Control 面板里多加 4 个滑块，当作增益旋钮。它们是“不出力”的执行器（gear = 0），只用来读数。
+    spec = mujoco.MjSpec.from_file(XML)
+    for name, hi in (("K_x", 10), ("K_x_dot", 20), ("K_theta", 100), ("K_theta_dot", 30)):
+        a = spec.add_actuator(); a.name = name; a.target = "hinge"; a.trntype = mujoco.mjtTrn.mjTRN_JOINT
+        a.gear[0] = 0.0; a.ctrlrange = [-hi, hi]; a.ctrllimited = 1   # 允许负数，好试试“方向反了”会怎样
+    model = spec.compile()
+    gains0 = [float(v) for v in args.gains.split(",")]
+    controller = lambda s: float(np.dot(data.ctrl[1:5], s))     # F = K_x·x + K_ẋ·ẋ + K_θ·θ + K_θ̇·θ̇
+else:
+    controller = CONTROLLERS[args.ctrl]
+    model = mujoco.MjModel.from_xml_path(XML)
 data = mujoco.MjData(model)
 DT = model.opt.timestep * DECIMATION
 HIST = int(5.0 / DT)                      # 最近 5 秒
@@ -86,8 +100,12 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
     while viewer.is_running():
         tick = time.time()
         if state["reset"]:
+            keep = data.ctrl[1:].copy()                 # 重置时保留你调好的增益
             mujoco.mj_resetData(model, data)
-            data.qpos[1] = np.radians(1.0)
+            data.ctrl[1:] = keep
+            if args.ctrl == "tune" and t == 0.0 and not keep.any():
+                data.ctrl[1:5] = gains0
+            data.qpos[1] = np.radians(5.0 if args.ctrl == "tune" else 1.0)
             mujoco.mj_forward(model, data)
             hist[:] = 0; hist[:, 0] = 1.0; t = 0.0; state["reset"] = False
         if not state["paused"]:
@@ -114,7 +132,9 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
         fallen = abs(data.qpos[1]) > THETA_LIMIT or abs(data.qpos[0]) > X_LIMIT
         status = "PAUSED" if state["paused"] else ("FAILED (>12 deg or out of track)" if fallen else "ok")
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150, mujoco.mjtGridPos.mjGRID_TOPLEFT,
-                          f"controller: {args.ctrl}\nt = {t:5.2f} s\nstatus: {status}",
+                          f"controller: {args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
+                          + (f"\nF = {data.ctrl[1]:.1f}x + {data.ctrl[2]:.1f}xdot + {data.ctrl[3]:.1f}th + {data.ctrl[4]:.1f}thdot"
+                             if args.ctrl == "tune" else ""),
                           f"angle {np.degrees(data.qpos[1]):+6.1f} deg\nx {data.qpos[0]:+5.2f} m\nforce {data.ctrl[0]:+5.1f} N"))
         viewer.sync()
         time.sleep(max(0.0, DT - (time.time() - tick)))   # 按真实时间播放

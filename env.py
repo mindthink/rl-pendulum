@@ -44,17 +44,28 @@ class CartPoleMJ:
             mujoco.mj_step(self.model, self.data)
         return self.state, self.failed()
 
+    def kick(self, dx_dot=0.0, dth_dot=0.0):
+        """扰动（disturbance）：瞬间改变小车速度和杆角速度，相当于有人推了一下。"""
+        self.data.qvel[0] += dx_dot
+        self.data.qvel[1] += dth_dot
+        mujoco.mj_forward(self.model, self.data)
+        return self.state
+
     def failed(self):
         x, _, th, _ = self.state
         return abs(x) > X_LIMIT or abs(th) > THETA_LIMIT
 
 
-def simulate(controller, seconds=10.0, state0=None, env=None, stop_on_fail=True, rng=None):
-    """用一个控制器跑一段。controller(state) -> 推力 F。返回 时间、状态、推力 三个数组。"""
+def simulate(controller, seconds=10.0, state0=None, env=None, stop_on_fail=True, rng=None, kicks=None):
+    """用一个控制器跑一段。controller(state) -> 推力 F。返回 时间、状态、推力 三个数组。
+    kicks：{时间(s): (小车速度增量, 杆角速度增量)}，到时间就推一下。"""
     env = env or CartPoleMJ()
     s = env.reset(state0, rng)
+    kick_at = {int(round(t / env.dt)): v for t, v in (kicks or {}).items()}
     ts, states, forces = [0.0], [s], []
     for k in range(int(round(seconds / env.dt))):
+        if k in kick_at:
+            s = env.kick(*kick_at[k])
         f = float(np.clip(controller(s), -env.f_max, env.f_max))
         s, fail = env.step(f)
         ts.append((k + 1) * env.dt); states.append(s); forces.append(f)
