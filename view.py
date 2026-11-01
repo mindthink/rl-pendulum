@@ -3,8 +3,9 @@
 运行（macOS 上被动查看器必须用 mjpython 启动）：
   /Users/mac/Development/rl-pendulum/.venv/bin/mjpython /Users/mac/Development/rl-pendulum/view.py
   ... view.py --ctrl pd        用控制器自动推
-  ... view.py --ctrl tune      调参模式：Control 面板里有 4 个增益滑块（K_x、K_x_dot、K_theta、K_theta_dot），
-                               F = K_x·x + K_x_dot·ẋ + K_theta·θ + K_theta_dot·θ̇，边拖边看效果；Backspace 让杆从 5° 重来
+  ... view.py --ctrl tune      调参模式：两个 PD 回路，Control 面板里 4 个增益滑块
+                               F = Kp_x·x + Kd_x·ẋ + Kp_theta·θ + Kd_theta·θ̇
+                               （P = 比例，看偏了多少；D = 微分，看变化有多快；这里还没有 I 积分项）
   ... view.py --ctrl tune --gains 0,0,20,0     指定初始增益
 
 操作：
@@ -32,7 +33,7 @@ CONTROLLERS = {
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune"])
-ap.add_argument("--gains", default="0,0,0,0", help="--ctrl tune 的初始增益：K_x,K_x_dot,K_theta,K_theta_dot")
+ap.add_argument("--gains", default="0,0,0,0", help="--ctrl tune 的初始增益：Kp_x,Kd_x,Kp_theta,Kd_theta")
 import sys
 argv = sys.argv[1:]
 for i, a in enumerate(argv[:-1]):          # 让 --gains -1,-2,40,8 这种以负数开头的写法也能用
@@ -44,12 +45,13 @@ args = ap.parse_args(argv)
 if args.ctrl == "tune":
     # 调参模式：在 Control 面板里多加 4 个滑块，当作增益旋钮。它们是“不出力”的执行器（gear = 0），只用来读数。
     spec = mujoco.MjSpec.from_file(XML)
-    for name, hi in (("K_x", 10), ("K_x_dot", 20), ("K_theta", 100), ("K_theta_dot", 30)):
+    # 两个 PD 回路：杆角度回路（Kp_theta、Kd_theta）和小车位置回路（Kp_x、Kd_x）
+    for name, hi in (("Kp_x", 10), ("Kd_x", 20), ("Kp_theta", 100), ("Kd_theta", 30)):
         a = spec.add_actuator(); a.name = name; a.target = "hinge"; a.trntype = mujoco.mjtTrn.mjTRN_JOINT
         a.gear[0] = 0.0; a.ctrlrange = [-hi, hi]; a.ctrllimited = 1   # 允许负数，好试试“方向反了”会怎样
     model = spec.compile()
     gains0 = [float(v) for v in args.gains.split(",")]
-    controller = lambda s: float(np.dot(data.ctrl[1:5], s))     # F = K_x·x + K_ẋ·ẋ + K_θ·θ + K_θ̇·θ̇
+    controller = lambda s: float(np.dot(data.ctrl[1:5], s))     # F = Kp_x·x + Kd_x·ẋ + Kp_θ·θ + Kd_θ·θ̇
 else:
     controller = CONTROLLERS[args.ctrl]
     model = mujoco.MjModel.from_xml_path(XML)
@@ -159,7 +161,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
         status = "PAUSED" if state["paused"] else ("FAILED (>12 deg or out of track)" if fallen else "ok")
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150, mujoco.mjtGridPos.mjGRID_TOPLEFT,
                           f"controller: {args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
-                          + (f"\nF = {data.ctrl[1]:.1f}x + {data.ctrl[2]:.1f}xdot + {data.ctrl[3]:.1f}th + {data.ctrl[4]:.1f}thdot"
+                          + (f"\nKp_x {data.ctrl[1]:.1f}  Kd_x {data.ctrl[2]:.1f}  Kp_theta {data.ctrl[3]:.1f}  Kd_theta {data.ctrl[4]:.1f}"
                              if args.ctrl == "tune" else ""),
                           f"angle {np.degrees(data.qpos[1]):+6.1f} deg\nx {data.qpos[0]:+5.2f} m\nforce {data.ctrl[0]:+5.1f} N"))
         viewer.sync()
