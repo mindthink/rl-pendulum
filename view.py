@@ -36,7 +36,8 @@ CONTROLLERS = {
 }
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune", "lqr", "mpc", "qtable"])
+ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune", "lqr", "mpc", "qtable", "pg"])
+ap.add_argument("--pgfile", default="out/pg_seed0.pt", help="--ctrl pg：第 5 课学到的策略网络")
 ap.add_argument("--qfile", default="out/q_table_seed0.npy", help="--ctrl qtable：第 4 课学到的 Q 表")
 ap.add_argument("--kick", type=float, default=0.0, help="每一轮 t = 1 s 时给杆一个角速度冲击（rad/s），用来比较抗扰动能力")
 ap.add_argument("--limits", action="store_true", help="--ctrl mpc：把失败线（|θ| ≤ 11°、|x| ≤ 2.3 m）也写进约束")
@@ -51,6 +52,17 @@ for i, a in enumerate(argv[:-1]):          # 让 --gains -1,-2,40,8 这种以负
         argv[i:i + 2] = [f"--gains={argv[i + 1]}"]
         break
 args = ap.parse_args(argv)
+
+if args.ctrl == "pg":
+    import os
+    import torch
+    from pg import GaussianPolicy
+    pf = args.pgfile if os.path.isabs(args.pgfile) else os.path.join(os.path.dirname(os.path.abspath(__file__)), args.pgfile)
+    _pol = GaussianPolicy(); _pol.load_state_dict(torch.load(pf)); _pol.eval()
+    CONTROLLERS["pg"] = lambda s: _pol.act(s, deterministic=True)
+    pg_label = f"policy gradient ({os.path.basename(pf)})"
+else:
+    pg_label = None
 
 if args.ctrl == "qtable":
     import os
@@ -213,7 +225,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
         else:
             status = "ok"
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150, mujoco.mjtGridPos.mjGRID_TOPLEFT,
-                          f"controller: {lqr_label or mpc_label or q_label or args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
+                          f"controller: {lqr_label or mpc_label or q_label or pg_label or args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
                           + (f"\nKp_x {data.ctrl[1]:.1f}  Kd_x {data.ctrl[2]:.1f}  Kp_theta {data.ctrl[3]:.1f}  Kd_theta {data.ctrl[4]:.1f}"
                              if args.ctrl == "tune" else ""),
                           f"angle {np.degrees(data.qpos[1]):+6.1f} deg\nx {data.qpos[0]:+5.2f} m\nforce {data.ctrl[0]:+5.1f} N"))
