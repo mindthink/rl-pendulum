@@ -59,8 +59,8 @@ LQR 不手调增益，而是从线性模型和代价函数（Q、R）离线算�
 | 2.5 | 模型预测控制（MPC）：把推力上限和失败线写进约束，和 LQR 比抗冲击能力 | 完成 |
 | 3 | 最简单的“学习”：瞎猜和爬山找 4 个增益；奖励投机（reward hacking）和奖励塑形（reward shaping） | 完成 |
 | 4 | Q-learning：价值函数（value function）、折扣、探索 | 完成 |
-| 5 | 策略梯度（policy gradient）：REINFORCE | 进行中 |
-| 6 | Actor-Critic 和 PPO | 计划中 |
+| 5 | 策略梯度（policy gradient）：REINFORCE | 完成 |
+| 6 | Actor-Critic 和 PPO | 进行中 |
 | 7 | 摆起（swing-up）：连续动作和奖励设计 | 计划中 |
 | 8 | 域随机化（domain randomization）和 sim2real：噪声、延迟、参数误差 | 计划中 |
 | 9 | 教师策略（teacher policy）和行为克隆（behavior cloning）：学生会继承教师的缺点 | 计划中 |
