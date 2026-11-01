@@ -6,4 +6,5 @@ imageio-ffmpeg
 pillow
 gymnasium        # 只用来和经典 CartPole 对照
 osqp             # 第 2.5 课 MPC 的二次规划求解器
-scipy
+scipy<1.15       # 1.15 起要求 numpy 2，和 torch 2.2 冲突
+torch==2.2.2     # 第 5 课起；Intel Mac 上 PyTorch 官方支持的最后一个版本
