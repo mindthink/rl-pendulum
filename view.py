@@ -36,7 +36,8 @@ CONTROLLERS = {
 }
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune", "lqr", "mpc", "qtable", "pg", "ppo", "dqn"])
+ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune", "lqr", "mpc", "qtable", "pg", "ppo", "dqn", "sac"])
+ap.add_argument("--sacfile", default="out/sac_seed0.pt", help="--ctrl sac：第 6.5 课学到的演员网络")
 ap.add_argument("--dqnfile", default="out/dqn_shaped_seed0.pt", help="--ctrl dqn：第 4.5 课学到的网络")
 ap.add_argument("--ppofile", default="out/ppo_seed0.pt", help="--ctrl ppo：第 6 课学到的策略网络")
 ap.add_argument("--pgfile", default="out/pg_seed0.pt", help="--ctrl pg：第 5 课学到的策略网络")
@@ -54,6 +55,17 @@ for i, a in enumerate(argv[:-1]):          # 让 --gains -1,-2,40,8 这种以负
         argv[i:i + 2] = [f"--gains={argv[i + 1]}"]
         break
 args = ap.parse_args(argv)
+
+if args.ctrl == "sac":
+    import os
+    import torch
+    from sac import Actor
+    sf = args.sacfile if os.path.isabs(args.sacfile) else os.path.join(os.path.dirname(os.path.abspath(__file__)), args.sacfile)
+    _act = Actor(); _act.load_state_dict(torch.load(sf)); _act.eval()
+    CONTROLLERS["sac"] = lambda s: _act.act(s, deterministic=True)
+    sac_label = f"SAC ({os.path.basename(sf)})"
+else:
+    sac_label = None
 
 if args.ctrl == "dqn":
     import os
@@ -242,7 +254,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
         else:
             status = "ok"
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150, mujoco.mjtGridPos.mjGRID_TOPLEFT,
-                          f"controller: {lqr_label or mpc_label or q_label or pg_label or dqn_label or args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
+                          f"controller: {lqr_label or mpc_label or q_label or pg_label or dqn_label or sac_label or args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
                           + (f"\nKp_x {data.ctrl[1]:.1f}  Kd_x {data.ctrl[2]:.1f}  Kp_theta {data.ctrl[3]:.1f}  Kd_theta {data.ctrl[4]:.1f}"
                              if args.ctrl == "tune" else ""),
                           f"angle {np.degrees(data.qpos[1]):+6.1f} deg\nx {data.qpos[0]:+5.2f} m\nforce {data.ctrl[0]:+5.1f} N"))
