@@ -10,6 +10,7 @@
   ... view.py --ctrl lqr --R 0.1 --Q 1,1,10,1  用 LQR 从 Q、R 算出增益，填进同样的 4 个滑块
   ... view.py --ctrl mpc --R 0.1 [--limits]    模型预测控制；--limits 把失败线也写进约束
   ... --kick 2.0                               每一轮 t = 1 s 时给杆一个 2.0 rad/s 的冲击（任何控制器都能加）
+  ... view.py --ctrl qtable [--qfile out/q_table_seed0.npy]   第 4 课学到的 Q 表（只会 ±10 N 两种推法）
 
 操作：
   右侧 Control 面板拖 push 滑块 = 你自己推小车（没选控制器时）
@@ -35,7 +36,8 @@ CONTROLLERS = {
 }
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune", "lqr", "mpc"])
+ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune", "lqr", "mpc", "qtable"])
+ap.add_argument("--qfile", default="out/q_table_seed0.npy", help="--ctrl qtable：第 4 课学到的 Q 表")
 ap.add_argument("--kick", type=float, default=0.0, help="每一轮 t = 1 s 时给杆一个角速度冲击（rad/s），用来比较抗扰动能力")
 ap.add_argument("--limits", action="store_true", help="--ctrl mpc：把失败线（|θ| ≤ 11°、|x| ≤ 2.3 m）也写进约束")
 ap.add_argument("--Q", default="1,1,10,1", help="--ctrl lqr：对 x, ẋ, θ, θ̇ 偏离的惩罚")
@@ -49,6 +51,15 @@ for i, a in enumerate(argv[:-1]):          # 让 --gains -1,-2,40,8 这种以负
         argv[i:i + 2] = [f"--gains={argv[i + 1]}"]
         break
 args = ap.parse_args(argv)
+
+if args.ctrl == "qtable":
+    import os
+    from qlearn import Discretizer, greedy_policy
+    qf = args.qfile if os.path.isabs(args.qfile) else os.path.join(os.path.dirname(os.path.abspath(__file__)), args.qfile)
+    CONTROLLERS["qtable"] = greedy_policy(np.load(qf), Discretizer())
+    q_label = f"Q-table ({os.path.basename(qf)})"
+else:
+    q_label = None
 
 if args.ctrl == "mpc":
     from mpc import MPC
@@ -202,7 +213,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
         else:
             status = "ok"
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150, mujoco.mjtGridPos.mjGRID_TOPLEFT,
-                          f"controller: {lqr_label or mpc_label or args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
+                          f"controller: {lqr_label or mpc_label or q_label or args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
                           + (f"\nKp_x {data.ctrl[1]:.1f}  Kd_x {data.ctrl[2]:.1f}  Kp_theta {data.ctrl[3]:.1f}  Kd_theta {data.ctrl[4]:.1f}"
                              if args.ctrl == "tune" else ""),
                           f"angle {np.degrees(data.qpos[1]):+6.1f} deg\nx {data.qpos[0]:+5.2f} m\nforce {data.ctrl[0]:+5.1f} N"))
