@@ -1,0 +1,7 @@
+mujoco==3.10.0
+numpy<2          # 第 5 课的 PyTorch 2.2（Intel Mac 最后一个版本）需要 numpy 1.x
+matplotlib
+imageio
+imageio-ffmpeg
+pillow
+gymnasium        # 只用来和经典 CartPole 对照

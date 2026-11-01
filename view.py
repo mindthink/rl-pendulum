@@ -1,0 +1,120 @@
+"""MuJoCo 窗口实时看倒立摆，同一个窗口右侧叠加曲线：杆角度、杆角速度、小车位置、推力（最近 5 秒）。
+
+运行（macOS 上被动查看器必须用 mjpython 启动）：
+  /Users/mac/Development/rl-pendulum/.venv/bin/mjpython /Users/mac/Development/rl-pendulum/view.py
+  ... view.py --ctrl pd        用控制器自动推（第 2 课会加更多控制器）
+
+操作：
+  右侧 Control 面板拖 push 滑块 = 你自己推小车（没选控制器时）
+  双击选中杆，Ctrl + 右键拖动 = 用手推杆一下（扰动）
+  空格 = 暂停 / 继续      Backspace = 重置（杆从 1° 开始）
+窗口里的文字和曲线标签只能显示英文（MuJoCo 自带字体没有中文）：
+  pole angle 杆角度（°）、pole rate 杆角速度（°/s）、cart pos 小车位置（m）、force 推力（N）
+"""
+import argparse
+import time
+
+import mujoco
+import mujoco.viewer
+import numpy as np
+
+from env import DECIMATION, THETA_LIMIT, X_LIMIT, XML
+
+CONTROLLERS = {
+    "none": None,
+    # 第 2 课会讲：先放一个 PD 控制器，让你看看“稳住”是什么样子
+    "pd": lambda s: 40 * s[2] + 8 * s[3] + 1.0 * s[0] + 2.0 * s[1],
+}
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS))
+args = ap.parse_args()
+controller = CONTROLLERS[args.ctrl]
+
+model = mujoco.MjModel.from_xml_path(XML)
+data = mujoco.MjData(model)
+DT = model.opt.timestep * DECIMATION
+HIST = int(5.0 / DT)                      # 最近 5 秒
+
+state = {"paused": False, "reset": True}
+
+
+def on_key(key):
+    if key == 32:      # 空格
+        state["paused"] = not state["paused"]
+    elif key == 259:   # Backspace
+        state["reset"] = True
+
+
+def make_fig(title, names, colors, y_range):
+    f = mujoco.MjvFigure()
+    mujoco.mjv_defaultFigure(f)
+    f.title = title
+    f.flg_extend = 0
+    f.flg_legend = 1
+    f.gridsize[:] = [5, 5]
+    f.range[0][:] = [-5, 0]               # 横轴：过去 5 秒
+    f.range[1][:] = y_range
+    f.figurergba[:] = [0.1, 0.1, 0.12, 0.75]
+    f.panergba[:] = [0.1, 0.1, 0.12, 0.6]
+    for i, (n, c) in enumerate(zip(names, colors)):
+        f.linename[i] = n
+        f.linergb[i] = c
+    return f
+
+
+figs = [
+    make_fig("pole angle (deg)", ["angle", "+12 limit", "-12 limit"], [[1, .6, .2], [.9, .2, .2], [.9, .2, .2]], [-20, 20]),
+    make_fig("pole rate (deg/s)", ["rate"], [[1, .85, .3]], [-150, 150]),
+    make_fig("cart pos (m)", ["x", "+2.4", "-2.4"], [[.4, .8, 1], [.9, .2, .2], [.9, .2, .2]], [-3, 3]),
+    make_fig("force (N)", ["force"], [[.4, 1, .5]], [-11, 11]),
+]
+hist = np.zeros((HIST, 4))                # 角度°、角速度°/s、位置 m、推力 N
+t_axis = np.linspace(-5, 0, HIST)
+
+
+def fill(fig, line, values):
+    n = len(values)
+    fig.linepnt[line] = n
+    fig.linedata[line][0:2 * n:2] = t_axis[-n:]
+    fig.linedata[line][1:2 * n:2] = values
+
+
+with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui=False) as viewer:
+    viewer.cam.lookat[:] = [0, 0, -0.35]; viewer.cam.distance = 6.0; viewer.cam.azimuth = 90; viewer.cam.elevation = -8
+    t = 0.0
+    while viewer.is_running():
+        tick = time.time()
+        if state["reset"]:
+            mujoco.mj_resetData(model, data)
+            data.qpos[1] = np.radians(1.0)
+            mujoco.mj_forward(model, data)
+            hist[:] = 0; hist[:, 0] = 1.0; t = 0.0; state["reset"] = False
+        if not state["paused"]:
+            s = np.array([data.qpos[0], data.qvel[0], data.qpos[1], data.qvel[1]])
+            with viewer.lock():
+                if controller is not None:
+                    data.ctrl[0] = float(np.clip(controller(s), -10, 10))
+                for _ in range(DECIMATION):
+                    mujoco.mj_step(model, data)
+            t += DT
+            s = np.array([data.qpos[0], data.qvel[0], data.qpos[1], data.qvel[1]])
+            hist = np.roll(hist, -1, axis=0)
+            hist[-1] = [np.degrees(s[2]), np.degrees(s[3]), s[0], data.ctrl[0]]
+
+        fill(figs[0], 0, hist[:, 0]); fill(figs[0], 1, np.full(HIST, 12.0)); fill(figs[0], 2, np.full(HIST, -12.0))
+        fill(figs[1], 0, hist[:, 1])
+        fill(figs[2], 0, hist[:, 2]); fill(figs[2], 1, np.full(HIST, X_LIMIT)); fill(figs[2], 2, np.full(HIST, -X_LIMIT))
+        fill(figs[3], 0, hist[:, 3])
+
+        vp = viewer.viewport
+        if vp is not None:   # 曲线横排在窗口底部，占 30% 高度；3D 画面在上面
+            w, h = int(vp.width / 4), int(vp.height * 0.30)
+            viewer.set_figures([(mujoco.MjrRect(vp.left + i * w, vp.bottom, w, h), f) for i, f in enumerate(figs)])
+        fallen = abs(data.qpos[1]) > THETA_LIMIT or abs(data.qpos[0]) > X_LIMIT
+        status = "PAUSED" if state["paused"] else ("FAILED (>12 deg or out of track)" if fallen else "ok")
+        viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150, mujoco.mjtGridPos.mjGRID_TOPLEFT,
+                          f"controller: {args.ctrl}\nt = {t:5.2f} s\nstatus: {status}",
+                          f"angle {np.degrees(data.qpos[1]):+6.1f} deg\nx {data.qpos[0]:+5.2f} m\nforce {data.ctrl[0]:+5.1f} N"))
+        viewer.sync()
+        time.sleep(max(0.0, DT - (time.time() - tick)))   # 按真实时间播放

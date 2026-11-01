@@ -1,0 +1,52 @@
+<!--
+  小车倒立摆（cart-pole）的 MuJoCo 模型。参数和经典的 CartPole 一样：
+  小车 1.0 kg，杆 0.1 kg、长 1.0 m，推力 ±10 N。
+  物理步长 5 ms，控制每 4 步（20 ms，50 Hz）给一次力，这和 Microduck 的设置相同（timestep 0.005，decimation 4）。
+-->
+<mujoco model="cartpole">
+  <option timestep="0.005" integrator="RK4" gravity="0 0 -9.8"/>
+
+  <visual>
+    <global offwidth="960" offheight="540"/>
+    <headlight ambient=".45 .45 .45" diffuse=".5 .5 .5"/>
+  </visual>
+
+  <asset>
+    <texture name="sky" type="skybox" builtin="gradient" rgb1=".96 .97 1" rgb2=".78 .84 .92" width="256" height="256"/>
+    <texture name="grid" type="2d" builtin="checker" rgb1=".92 .93 .95" rgb2=".85 .87 .9" width="300" height="300"/>
+    <material name="grid" texture="grid" texrepeat="8 8" reflectance="0.05"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 -3 4" dir="0 0.6 -0.8"/>
+    <geom name="floor" type="plane" size="10 10 0.1" material="grid" pos="0 0 -0.12"/>
+    <!-- 轨道和两端的出界标记（±2.4 m） -->
+    <geom name="rail" type="box" size="2.9 0.02 0.01" pos="0 0 -0.06" rgba=".5 .5 .5 1" contype="0" conaffinity="0"/>
+    <geom name="limit_l" type="box" size="0.02 0.08 0.12" pos="-2.4 0 0" rgba=".85 .2 .2 1" contype="0" conaffinity="0"/>
+    <geom name="limit_r" type="box" size="0.02 0.08 0.12" pos="2.4 0 0" rgba=".85 .2 .2 1" contype="0" conaffinity="0"/>
+    <!-- 轨道两端的挡块（小车中心到 ±2.55 m 时，车身边缘刚好碰到它） -->
+    <geom name="stop_l" type="box" size="0.05 0.15 0.1" pos="-2.85 0 0" rgba=".3 .3 .3 1" contype="0" conaffinity="0"/>
+    <geom name="stop_r" type="box" size="0.05 0.15 0.1" pos="2.85 0 0" rgba=".3 .3 .3 1" contype="0" conaffinity="0"/>
+
+    <body name="cart" pos="0 0 0">
+      <!-- 滑动关节：小车只能左右移动。±2.55 m 处有物理挡块（关节限位），撞上就停；
+           ±2.4 m 的红线是“失败线”，过线算失败，但小车还能再走 15 cm 才撞到挡块 -->
+      <joint name="slider" type="slide" axis="1 0 0" limited="true" range="-2.55 2.55" solreflimit="0.01 1"/>
+      <geom name="cart" type="box" size="0.25 0.12 0.05" mass="1.0" rgba=".2 .2 .22 1" contype="0" conaffinity="0"/>
+      <body name="pole" pos="0 0 0.05">
+        <!-- 铰链关节：杆绕 y 轴转。角度为正 = 杆顶向右（+x）倒。
+             限位 ±95°：杆倒下后躺在小车上，不会穿过地面一直转 -->
+        <joint name="hinge" type="hinge" axis="0 1 0" limited="true" range="-95 95" solreflimit="0.01 1"/>
+        <!-- 质量属性按教科书的“均匀细杆”写死：0.1 kg，质心在 0.5 m，绕质心的转动惯量 m·L²/12 = 0.1 × 1² / 12。
+             不让 MuJoCo 按胶囊体的形状去算（那样会多出约 7%），保证和经典 CartPole 的方程一致。 -->
+        <inertial pos="0 0 0.5" mass="0.1" diaginertia="0.0083333 0.0083333 0.000001"/>
+        <geom name="pole" type="capsule" fromto="0 0 0 0 0 1.0" size="0.025" rgba=".95 .55 .15 1" contype="0" conaffinity="0"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- 电机：直接给小车一个水平力，限制在 ±10 N -->
+    <motor name="push" joint="slider" gear="1" ctrlrange="-10 10" ctrllimited="true"/>
+  </actuator>
+</mujoco>
