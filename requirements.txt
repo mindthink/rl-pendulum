@@ -5,3 +5,5 @@ imageio
 imageio-ffmpeg
 pillow
 gymnasium        # 只用来和经典 CartPole 对照
+osqp             # 第 2.5 课 MPC 的二次规划求解器
+scipy

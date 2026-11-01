@@ -8,6 +8,8 @@
                                （P = 比例，看偏了多少；D = 微分，看变化有多快；这里还没有 I 积分项）
   ... view.py --ctrl tune --gains 0,0,20,0     指定初始增益
   ... view.py --ctrl lqr --R 0.1 --Q 1,1,10,1  用 LQR 从 Q、R 算出增益，填进同样的 4 个滑块
+  ... view.py --ctrl mpc --R 0.1 [--limits]    模型预测控制；--limits 把失败线也写进约束
+  ... --kick 2.0                               每一轮 t = 1 s 时给杆一个 2.0 rad/s 的冲击（任何控制器都能加）
 
 操作：
   右侧 Control 面板拖 push 滑块 = 你自己推小车（没选控制器时）
@@ -33,7 +35,9 @@ CONTROLLERS = {
 }
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune", "lqr"])
+ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune", "lqr", "mpc"])
+ap.add_argument("--kick", type=float, default=0.0, help="每一轮 t = 1 s 时给杆一个角速度冲击（rad/s），用来比较抗扰动能力")
+ap.add_argument("--limits", action="store_true", help="--ctrl mpc：把失败线（|θ| ≤ 11°、|x| ≤ 2.3 m）也写进约束")
 ap.add_argument("--Q", default="1,1,10,1", help="--ctrl lqr：对 x, ẋ, θ, θ̇ 偏离的惩罚")
 ap.add_argument("--R", type=float, default=0.1, help="--ctrl lqr：对用力的惩罚")
 ap.add_argument("--x0", type=float, default=0.5, help="--ctrl tune 时小车的起点（m），默认中点右边 0.5 m")
@@ -45,6 +49,16 @@ for i, a in enumerate(argv[:-1]):          # 让 --gains -1,-2,40,8 这种以负
         argv[i:i + 2] = [f"--gains={argv[i + 1]}"]
         break
 args = ap.parse_args(argv)
+
+if args.ctrl == "mpc":
+    from mpc import MPC
+    _mpc_kw = dict(q=[float(v) for v in args.Q.split(",")], r=args.R)
+    if args.limits:
+        _mpc_kw.update(theta_limit=np.radians(11), x_limit=2.3)
+    CONTROLLERS["mpc"] = MPC(**_mpc_kw)
+    mpc_label = f"MPC R={args.R}" + (" +limits" if args.limits else " (force limit only)")
+else:
+    mpc_label = None
 
 if args.ctrl == "lqr":
     # LQR：从 Q、R 算出 4 个增益，填进调参模式的滑块里（之后还可以手动改）
@@ -131,6 +145,8 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
             last_gains = g
             if gains_changed_at is not None and tick - gains_changed_at > 0.4:
                 state["reset"] = True; gains_changed_at = None
+        if args.kick and t > 6.0:             # 冲击测试：每轮 6 秒，自动重来
+            state["reset"] = True
         if args.ctrl != "none":
             bad = abs(data.qpos[1]) > THETA_LIMIT or abs(data.qpos[0]) > X_LIMIT
             if bad and failed_at is None:
@@ -148,9 +164,13 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
             data.qpos[1] = np.radians((0.0 if args.x0 else 5.0) if args.ctrl == "tune" else 1.0)
             if args.ctrl == "tune":
                 data.qpos[0] = args.x0        # 调参模式：小车不从中点开始，好看出它回不回中间
+            if args.kick:                     # 冲击测试：从正中间、杆竖直开始，t = 1 s 推一下
+                data.qpos[:] = [0.0, 0.0]
             mujoco.mj_forward(model, data)
             hist[:] = 0; t = 0.0; state["reset"] = False; failed_at = None
         if not state["paused"]:
+            if args.kick and abs(t - 1.0) < DT / 2:      # 每一轮 t = 1 s 时推杆一下
+                data.qvel[1] += args.kick
             s = np.array([data.qpos[0], data.qvel[0], data.qpos[1], data.qvel[1]])
             with viewer.lock():
                 if controller is not None:
@@ -174,7 +194,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
         fallen = abs(data.qpos[1]) > THETA_LIMIT or abs(data.qpos[0]) > X_LIMIT
         status = "PAUSED" if state["paused"] else ("FAILED (>12 deg or out of track)" if fallen else "ok")
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150, mujoco.mjtGridPos.mjGRID_TOPLEFT,
-                          f"controller: {lqr_label or args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
+                          f"controller: {lqr_label or mpc_label or args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
                           + (f"\nKp_x {data.ctrl[1]:.1f}  Kd_x {data.ctrl[2]:.1f}  Kp_theta {data.ctrl[3]:.1f}  Kd_theta {data.ctrl[4]:.1f}"
                              if args.ctrl == "tune" else ""),
                           f"angle {np.degrees(data.qpos[1]):+6.1f} deg\nx {data.qpos[0]:+5.2f} m\nforce {data.ctrl[0]:+5.1f} N"))
