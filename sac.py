@@ -55,11 +55,11 @@ class QNet(nn.Module):
 
 
 def train(total_steps=30000, buffer=100000, batch=256, gamma=0.99, lr=3e-4, tau=0.005, learn_start=1000,
-          seed=0, log=2500, max_steps=500, v_scale=50.0):
+          seed=0, log=2500, max_steps=500, v_scale=50.0, target_entropy=-1.0):
     torch.manual_seed(seed); rng = np.random.default_rng(seed)
     actor, q1, q2 = Actor(), QNet(), QNet()
     q1t, q2t = QNet(), QNet(); q1t.load_state_dict(q1.state_dict()); q2t.load_state_dict(q2.state_dict())
-    log_alpha = torch.zeros(1, requires_grad=True); target_entropy = -1.0
+    log_alpha = torch.zeros(1, requires_grad=True)   # 目标熵越高，α 越不容易降到很低，探索保留得越多
     oa = torch.optim.Adam(actor.parameters(), lr); oq = torch.optim.Adam(list(q1.parameters()) + list(q2.parameters()), lr)
     oal = torch.optim.Adam([log_alpha], lr)
     S = np.zeros((buffer, 4), np.float32); A = np.zeros((buffer, 1), np.float32); R = np.zeros(buffer, np.float32)

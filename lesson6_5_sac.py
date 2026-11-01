@@ -17,10 +17,12 @@ from env import simulate  # noqa: E402
 from sac import train  # noqa: E402
 
 ap = argparse.ArgumentParser(); ap.add_argument("--seed", type=int, default=0); ap.add_argument("--steps", type=int, default=30000)
+ap.add_argument("--target-entropy", type=float, default=-1.0, help="标准值 −1；调到 0.5 探索保留得更多，更稳、更抗推，但学得稍慢")
 args = ap.parse_args(); os.makedirs("out", exist_ok=True)
 print(f"SAC：训练 {args.steps} 步（随机种子 {args.seed}）")
-actor, hist = train(total_steps=args.steps, seed=args.seed, log=2500)
-torch.save(actor.state_dict(), f"out/sac_seed{args.seed}.pt")
+actor, hist = train(total_steps=args.steps, seed=args.seed, log=2500, target_entropy=args.target_entropy)
+tag = f"seed{args.seed}" + ("" if args.target_entropy == -1.0 else f"_te{args.target_entropy:g}")
+torch.save(actor.state_dict(), f"out/sac_{tag}.pt")
 c = lambda s: actor.act(s, deterministic=True)
 surv = sum(simulate(c, seconds=10, rng=np.random.default_rng(100 + i))[0][-1] >= 9.99 for i in range(20))
 ts, st, _ = simulate(c, seconds=30, state0=[0, 0, np.radians(2), 0])
@@ -38,5 +40,5 @@ ax[0].plot(t, ln, "o-"); ax[0].set_title("最近 10 回合平均立住步数（�
 ax[1].plot(t, al, "o-", color="C2"); ax[1].set_title("熵权重 α（越小 = 越不鼓励随机探索）"); ax[1].set_xlabel("训练步数")
 for a in ax:
     a.grid(alpha=0.3)
-fig.tight_layout(); fig.savefig(f"out/lesson6_5_seed{args.seed}.png", dpi=110)
-print(f"已生成 out/lesson6_5_seed{args.seed}.png 和 out/sac_seed{args.seed}.pt")
+fig.tight_layout(); fig.savefig(f"out/lesson6_5_{tag}.png", dpi=110)
+print(f"已生成 out/lesson6_5_{tag}.png 和 out/sac_{tag}.pt")
