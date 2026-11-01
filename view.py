@@ -135,6 +135,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
     viewer.cam.lookat[:] = [0, 0, -0.35]; viewer.cam.distance = 6.0; viewer.cam.azimuth = 90; viewer.cam.elevation = -8
     t = 0.0
     last_gains, gains_changed_at, failed_at = None, None, None
+    crossed_t = None                          # 这一轮第一次越过失败线的时刻（一旦越线，整轮都算失败）
     while viewer.is_running():
         tick = time.time()
         if args.ctrl == "tune":
@@ -167,7 +168,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
             if args.kick:                     # 冲击测试：从正中间、杆竖直开始，t = 1 s 推一下
                 data.qpos[:] = [0.0, 0.0]
             mujoco.mj_forward(model, data)
-            hist[:] = 0; t = 0.0; state["reset"] = False; failed_at = None
+            hist[:] = 0; t = 0.0; state["reset"] = False; failed_at = None; crossed_t = None
         if not state["paused"]:
             if args.kick and abs(t - 1.0) < DT / 2:      # 每一轮 t = 1 s 时推杆一下
                 data.qvel[1] += args.kick
@@ -192,7 +193,14 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
             w, h = int(vp.width / 4), int(vp.height * 0.30)
             viewer.set_figures([(mujoco.MjrRect(vp.left + i * w, vp.bottom, w, h), f) for i, f in enumerate(figs)])
         fallen = abs(data.qpos[1]) > THETA_LIMIT or abs(data.qpos[0]) > X_LIMIT
-        status = "PAUSED" if state["paused"] else ("FAILED (>12 deg or out of track)" if fallen else "ok")
+        if fallen and crossed_t is None:
+            crossed_t = t
+        if state["paused"]:
+            status = "PAUSED"
+        elif crossed_t is not None:
+            status = f"FAILED: crossed the line at {crossed_t:.2f} s" + (" (now back inside)" if not fallen else "")
+        else:
+            status = "ok"
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150, mujoco.mjtGridPos.mjGRID_TOPLEFT,
                           f"controller: {lqr_label or mpc_label or args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
                           + (f"\nKp_x {data.ctrl[1]:.1f}  Kd_x {data.ctrl[2]:.1f}  Kp_theta {data.ctrl[3]:.1f}  Kd_theta {data.ctrl[4]:.1f}"
