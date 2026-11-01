@@ -7,6 +7,7 @@
                                F = Kp_x·x + Kd_x·ẋ + Kp_theta·θ + Kd_theta·θ̇
                                （P = 比例，看偏了多少；D = 微分，看变化有多快；这里还没有 I 积分项）
   ... view.py --ctrl tune --gains 0,0,20,0     指定初始增益
+  ... view.py --ctrl lqr --R 0.1 --Q 1,1,10,1  用 LQR 从 Q、R 算出增益，填进同样的 4 个滑块
 
 操作：
   右侧 Control 面板拖 push 滑块 = 你自己推小车（没选控制器时）
@@ -32,7 +33,9 @@ CONTROLLERS = {
 }
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune"])
+ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune", "lqr"])
+ap.add_argument("--Q", default="1,1,10,1", help="--ctrl lqr：对 x, ẋ, θ, θ̇ 偏离的惩罚")
+ap.add_argument("--R", type=float, default=0.1, help="--ctrl lqr：对用力的惩罚")
 ap.add_argument("--x0", type=float, default=0.5, help="--ctrl tune 时小车的起点（m），默认中点右边 0.5 m")
 ap.add_argument("--gains", default="0,0,0,0", help="--ctrl tune 的初始增益：Kp_x,Kd_x,Kp_theta,Kd_theta")
 import sys
@@ -42,6 +45,16 @@ for i, a in enumerate(argv[:-1]):          # 让 --gains -1,-2,40,8 这种以负
         argv[i:i + 2] = [f"--gains={argv[i + 1]}"]
         break
 args = ap.parse_args(argv)
+
+if args.ctrl == "lqr":
+    # LQR：从 Q、R 算出 4 个增益，填进调参模式的滑块里（之后还可以手动改）
+    from controllers import lqr_gains
+    K = lqr_gains(q=[float(v) for v in args.Q.split(",")], r=args.R)
+    print(f"LQR  Q = diag({args.Q})  R = {args.R}  →  Kp_x {K[0]:.2f}  Kd_x {K[1]:.2f}  Kp_theta {K[2]:.2f}  Kd_theta {K[3]:.2f}")
+    args.gains = ",".join(f"{k:.4f}" for k in K)
+    args.ctrl, lqr_label = "tune", f"LQR Q=({args.Q}) R={args.R}"
+else:
+    lqr_label = None
 
 if args.ctrl == "tune":
     # 调参模式：在 Control 面板里多加 4 个滑块，当作增益旋钮。它们是“不出力”的执行器（gear = 0），只用来读数。
@@ -161,7 +174,7 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
         fallen = abs(data.qpos[1]) > THETA_LIMIT or abs(data.qpos[0]) > X_LIMIT
         status = "PAUSED" if state["paused"] else ("FAILED (>12 deg or out of track)" if fallen else "ok")
         viewer.set_texts((mujoco.mjtFontScale.mjFONTSCALE_150, mujoco.mjtGridPos.mjGRID_TOPLEFT,
-                          f"controller: {args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
+                          f"controller: {lqr_label or args.ctrl}\nt = {t:5.2f} s\nstatus: {status}"
                           + (f"\nKp_x {data.ctrl[1]:.1f}  Kd_x {data.ctrl[2]:.1f}  Kp_theta {data.ctrl[3]:.1f}  Kd_theta {data.ctrl[4]:.1f}"
                              if args.ctrl == "tune" else ""),
                           f"angle {np.degrees(data.qpos[1]):+6.1f} deg\nx {data.qpos[0]:+5.2f} m\nforce {data.ctrl[0]:+5.1f} N"))
