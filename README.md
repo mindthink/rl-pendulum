@@ -44,7 +44,11 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 ![两个 PD 回路共用一个电机的闭环图](docs/control_loop.png)
 
-`view.py --ctrl tune` 打开调参模式：Control 面板里 4 个滑块就是图里的 Kp_x、Kd_x、Kp_theta、Kd_theta，拖动后自动从起点重来。
+LQR 不手调增益，而是从线性模型和代价函数（Q、R）离线算出最优的 4 个增益：
+
+![LQR：离线算出 K，再用 F = −K·x 实时控制](docs/lqr_loop.png)
+
+`view.py --ctrl lqr --R 0.1` 用 LQR 算增益；`view.py --ctrl tune` 打开调参模式：Control 面板里 4 个滑块就是图里的 Kp_x、Kd_x、Kp_theta、Kd_theta，拖动后自动从起点重来。
 
 ## 课程
 

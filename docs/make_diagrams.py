@@ -81,3 +81,36 @@ ax.set_title("倒立摆的闭环控制：两个 PD 回路，共用一个电机",
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "control_loop.png")
 fig.savefig(out, dpi=130, bbox_inches="tight", facecolor="white")
 print(out)
+
+
+# ======================= LQR 图 =======================
+fig, ax = plt.subplots(figsize=(16, 8.6))
+ax.set_xlim(0, 17); ax.set_ylim(0, 9); ax.axis("off")
+C_OFF = "#8e44ad"
+plt.rcParams["mathtext.fontset"] = "dejavusans"
+
+ax.add_patch(FancyBboxPatch((0.3, 5.15), 16.4, 3.3, boxstyle="round,pad=0.02,rounding_size=0.15",
+                            fc="#8e44ad0d", ec=C_OFF, lw=1.5, ls="--"))
+ax.text(0.55, 8.15, "离线设计（offline design）：开始控制之前算一次", fontsize=12.5, color=C_OFF, va="center")
+box(0.6, 5.55, 3.2, 2.1, "线性模型（linear model）\n来自 linear.py\n$x_{k+1} = A x_k + B F_k$\n（20 ms 一步）", C_OFF, fs=11)
+box(4.3, 5.55, 3.2, 2.1, "代价函数（cost）\n$J = \\sum_k (x_k^T Q x_k + R F_k^2)$\nQ：讨厌偏离多少\nR：讨厌用力多少", C_OFF, fs=11)
+box(8.0, 5.55, 4.9, 2.1, "解 Riccati 方程，得到 P\n$P = Q + A^T P A - A^T P B (R + B^T P B)^{-1} B^T P A$\n（controllers.py 的 dlqr 反复迭代，直到 P 不再变）", C_OFF, fs=10.5)
+box(13.4, 5.55, 3.0, 2.1, "最优增益（gain）\n$K = (R + B^T P B)^{-1} B^T P A$\n4 个数", C_OFF, fs=11)
+arrow([(3.8, 6.6), (4.3, 6.6)], C_OFF); arrow([(7.5, 6.6), (8.0, 6.6)], C_OFF); arrow([(12.9, 6.6), (13.4, 6.6)], C_OFF)
+
+ax.text(0.55, 4.45, "实时控制（online）：每 20 ms 一次", fontsize=12.5, color=INK, va="center")
+box(2.6, 2.1, 3.9, 1.8, "状态反馈（state feedback）\n$F = -K x$\n$= K_{p,x} x + K_{d,x} \\dot{x} + K_{p,\\theta} \\theta + K_{d,\\theta} \\dot{\\theta}$", C_X, fs=10.5)
+box(7.2, 2.45, 1.9, 1.1, "限幅\n±10 N", C_SUM, fs=11)
+box(9.8, 2.0, 3.0, 2.0, "被控对象 (plant)\n小车 + 杆\nMuJoCo", C_PLANT, fs=12)
+arrow([(6.5, 3.0), (7.2, 3.0)], INK, "F", (6.85, 3.05)); arrow([(9.1, 3.0), (9.8, 3.0)], INK)
+arrow([(14.9, 5.55), (14.9, 4.85), (5.9, 4.85), (5.9, 3.9)], C_OFF, "把 4 个增益填进去（就是调参窗口里的 4 个滑块）", (10.4, 4.9))
+ax.plot([12.8, 13.4], [3.0, 3.0], color=INK, lw=1.8)
+arrow([(13.4, 3.0), (13.4, 1.0), (1.8, 1.0), (1.8, 3.0), (2.6, 3.0)], INK)
+ax.text(7.6, 0.82, "反馈整个状态 x = [x, ẋ, θ, θ̇]（state vector，4 个数一起）", fontsize=11.5, color=INK, ha="center", va="top")
+ax.annotate("扰动", xy=(11.3, 4.0), xytext=(12.2, 4.4), fontsize=10.5, color="#c0392b",
+            arrowprops=dict(arrowstyle="-|>", color="#c0392b", lw=1.6, mutation_scale=14))
+box(13.9, 1.2, 2.8, 3.1, "和 PID 图的区别\n\n· 不分两个回路：\n  一个 K 管全部状态\n· K 不是手调的，\n  是从模型和 Q、R 算的\n· 模型里没有 ±10 N 上限，\n  “最优”只在模型里成立", C_SUM, fs=10)
+ax.set_title("LQR：先离线算出最优增益 K，再用 F = −K·x 实时控制", fontsize=16, pad=10)
+out2 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lqr_loop.png")
+fig.savefig(out2, dpi=130, bbox_inches="tight", facecolor="white")
+print(out2)
