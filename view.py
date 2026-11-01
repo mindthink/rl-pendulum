@@ -50,7 +50,7 @@ if args.ctrl == "lqr":
     # LQR：从 Q、R 算出 4 个增益，填进调参模式的滑块里（之后还可以手动改）
     from controllers import lqr_gains
     K = lqr_gains(q=[float(v) for v in args.Q.split(",")], r=args.R)
-    print(f"LQR  Q = diag({args.Q})  R = {args.R}  →  Kp_x {K[0]:.2f}  Kd_x {K[1]:.2f}  Kp_theta {K[2]:.2f}  Kd_theta {K[3]:.2f}")
+    print(f"LQR  Q = diag({args.Q})  R = {args.R}  →  Kp_x {K[0]:.2f}  Kd_x {K[1]:.2f}  Kp_theta {K[2]:.2f}  Kd_theta {K[3]:.2f}", flush=True)
     args.gains = ",".join(f"{k:.4f}" for k in K)
     args.ctrl, lqr_label = "tune", f"LQR Q=({args.Q}) R={args.R}"
 else:
