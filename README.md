@@ -40,12 +40,18 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 顺带发现一件事：经典 CartPole（包括 gymnasium）每 20 ms 用一次欧拉积分，和精确解比，0.5 秒内杆角度最多差 5.6°。这里用 MuJoCo 的 RK4、每 5 ms 一步，和细步长的参考解只差 0.015°。
 
+## 控制闭环
+
+![两个 PD 回路共用一个电机的闭环图](docs/control_loop.png)
+
+`view.py --ctrl tune` 打开调参模式：Control 面板里 4 个滑块就是图里的 Kp_x、Kd_x、Kp_theta、Kd_theta，拖动后自动从起点重来。
+
 ## 课程
 
 | 课 | 主题 | 状态 |
 |---|---|---|
 | 1 | 在 MuJoCo 里搭倒立摆，核对物理；开环（open loop）推法为什么一定会倒 | 完成 |
-| 2 | 传统控制：手调 PID，再用 LQR 从模型算出最优参数；抗扰动测试 | 计划中 |
+| 2 | 传统控制：手调 PID，再用 LQR 从模型算出最优参数；抗扰动测试 | 进行中 |
 | 3 | 最简单的“学习”：随机搜索控制参数 | 计划中 |
 | 4 | Q-learning：价值函数（value function）、折扣、探索 | 计划中 |
 | 5 | 策略梯度（policy gradient）：REINFORCE | 计划中 |
