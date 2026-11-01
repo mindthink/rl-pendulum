@@ -2,8 +2,6 @@
 
 用一个倒立摆（cart-pole）从零学控制：先在 MuJoCo 里自己搭仿真，再用传统控制（PID、LQR）把它稳住，然后一步步换成强化学习（reinforcement learning, RL）。每一课都在同一个仿真上做，可以直接比较各种方法的效果。
 
-最终目标是看懂双足机器人的强化学习训练，比如 Pollen Robotics 的 [Microduck](https://github.com/pollen-robotics/microduck_rl)。所以这里的设置尽量和它一致：MuJoCo 物理步长 5 ms，控制频率 50 Hz（`decimation` 4）。
-
 ![实时窗口：上面是仿真，下面是杆角度、杆角速度、小车位置、推力四条曲线](docs/viewer.png)
 
 ## 快速开始
