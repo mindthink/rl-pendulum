@@ -10,7 +10,8 @@
 操作：
   右侧 Control 面板拖 push 滑块 = 你自己推小车（没选控制器时）
   双击选中杆，Ctrl + 右键拖动 = 用手推杆一下（扰动）
-  空格 = 暂停 / 继续      Backspace = 重置（杆从 1° 开始）
+  空格 = 暂停 / 继续      delete（Backspace）= 重置
+  调参模式（--ctrl tune）不用按键：松开滑块 0.4 s 后自动从起点重来，失败 1.5 s 后也自动重来
 窗口里的文字和曲线标签只能显示英文（MuJoCo 自带字体没有中文）：
   pole angle 杆角度（°）、pole rate 杆角速度（°/s）、cart pos 小车位置（m）、force 推力（N）
 """
@@ -32,7 +33,13 @@ CONTROLLERS = {
 ap = argparse.ArgumentParser()
 ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune"])
 ap.add_argument("--gains", default="0,0,0,0", help="--ctrl tune 的初始增益：K_x,K_x_dot,K_theta,K_theta_dot")
-args = ap.parse_args()
+import sys
+argv = sys.argv[1:]
+for i, a in enumerate(argv[:-1]):          # 让 --gains -1,-2,40,8 这种以负数开头的写法也能用
+    if a == "--gains":
+        argv[i:i + 2] = [f"--gains={argv[i + 1]}"]
+        break
+args = ap.parse_args(argv)
 
 if args.ctrl == "tune":
     # 调参模式：在 Control 面板里多加 4 个滑块，当作增益旋钮。它们是“不出力”的执行器（gear = 0），只用来读数。
@@ -97,8 +104,25 @@ def fill(fig, line, values):
 with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui=False) as viewer:
     viewer.cam.lookat[:] = [0, 0, -0.35]; viewer.cam.distance = 6.0; viewer.cam.azimuth = 90; viewer.cam.elevation = -8
     t = 0.0
+    last_gains, gains_changed_at, failed_at = None, None, None
     while viewer.is_running():
         tick = time.time()
+        if args.ctrl == "tune":
+            # 不用按键：滑块改了（停手 0.4 s 后）就自动从起点重来；失败 1.5 s 后也自动重来
+            g = data.ctrl[1:5].copy()
+            if last_gains is not None and np.abs(g - last_gains).max() > 1e-9:
+                gains_changed_at = tick
+            last_gains = g
+            if gains_changed_at is not None and tick - gains_changed_at > 0.4:
+                state["reset"] = True; gains_changed_at = None
+        if args.ctrl != "none":
+            bad = abs(data.qpos[1]) > THETA_LIMIT or abs(data.qpos[0]) > X_LIMIT
+            if bad and failed_at is None:
+                failed_at = tick
+            if failed_at is not None and tick - failed_at > 1.5:
+                state["reset"] = True
+            if not bad:
+                failed_at = None
         if state["reset"]:
             keep = data.ctrl[1:].copy()                 # 重置时保留你调好的增益
             mujoco.mj_resetData(model, data)
@@ -106,8 +130,10 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
             if args.ctrl == "tune" and t == 0.0 and not keep.any():
                 data.ctrl[1:5] = gains0
             data.qpos[1] = np.radians(5.0 if args.ctrl == "tune" else 1.0)
+            if args.ctrl == "tune":
+                data.qpos[0] = 0.5            # 调参模式：小车从中点右边 0.5 m 开始，好看出它回不回中间
             mujoco.mj_forward(model, data)
-            hist[:] = 0; hist[:, 0] = 1.0; t = 0.0; state["reset"] = False
+            hist[:] = 0; t = 0.0; state["reset"] = False; failed_at = None
         if not state["paused"]:
             s = np.array([data.qpos[0], data.qvel[0], data.qpos[1], data.qvel[1]])
             with viewer.lock():
