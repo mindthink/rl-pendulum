@@ -33,6 +33,7 @@ CONTROLLERS = {
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--ctrl", default="none", choices=list(CONTROLLERS) + ["tune"])
+ap.add_argument("--x0", type=float, default=0.5, help="--ctrl tune 时小车的起点（m），默认中点右边 0.5 m")
 ap.add_argument("--gains", default="0,0,0,0", help="--ctrl tune 的初始增益：Kp_x,Kd_x,Kp_theta,Kd_theta")
 import sys
 argv = sys.argv[1:]
@@ -131,9 +132,9 @@ with mujoco.viewer.launch_passive(model, data, key_callback=on_key, show_left_ui
             data.ctrl[1:] = keep
             if args.ctrl == "tune" and t == 0.0 and not keep.any():
                 data.ctrl[1:5] = gains0
-            data.qpos[1] = np.radians(5.0 if args.ctrl == "tune" else 1.0)
+            data.qpos[1] = np.radians((0.0 if args.x0 else 5.0) if args.ctrl == "tune" else 1.0)
             if args.ctrl == "tune":
-                data.qpos[0] = 0.5            # 调参模式：小车从中点右边 0.5 m 开始，好看出它回不回中间
+                data.qpos[0] = args.x0        # 调参模式：小车不从中点开始，好看出它回不回中间
             mujoco.mj_forward(model, data)
             hist[:] = 0; t = 0.0; state["reset"] = False; failed_at = None
         if not state["paused"]:
